@@ -1,0 +1,7 @@
+To install the Arduino ttymidi library (which I so aptly named "ardumidi"),
+just copy the ttymidi folder into the Arduino libraries folder:
+
+cp -r ardumidi /path/to/arduino/hardware/libraries/
+
+An example sketch is included in the file called ardumidi_test.pde . Please take
+a look at it, as it contains information on how to use the library.
