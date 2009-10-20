@@ -42,16 +42,17 @@
 
 static struct argp_option options[] = 
 {
-	{"verbose"      , 'v', 0     , 0, "Produce verbose output" }                    ,
-	{"quiet"        , 'q', 0     , 0, "Don't produce any output" }                  ,
 	{"serial device", 's', "DEV" , 0, "Serial device to use. Default = /dev/ttyS0" },
-	{"baud rate"    , 'b', "BAUD", 0, "Serial port baud rate. Default = 115200." }  ,
+	{"baud rate"    , 'b', "BAUD", 0, "Serial port baud rate. Default = 115200" },
+	{"verbose"      , 'v', 0     , 0, "For debugging: Produce verbose output" },
+	{"print only"   , 'p', 0     , 0, "Super debugging: Print values read from serial -- and do nothing else" },
+	{"quiet"        , 'q', 0     , 0, "Don't produce any output, even when the print command is sent" },
 	{ 0 }
 };
 
 typedef struct _arguments
 {
-	int  silent, verbose;
+	int  silent, verbose, printonly;
 	char serialdevice[MAX_DEV_STR_LEN];
 	int  baudrate;
 } arguments_t;
@@ -65,6 +66,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 
 	switch (key)
 	{
+		case 'p':
+			arguments->printonly = 1;
+			break;
 		case 'q':
 			arguments->silent = 1;
 			break;
@@ -105,6 +109,7 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 void arg_set_defaults(arguments_t *arguments)
 {
 	char *serialdevice_temp = "/dev/ttyS0";
+	arguments->printonly    = 0;
 	arguments->silent       = 0;
 	arguments->verbose      = 0;
 	arguments->baudrate     = B115200;
@@ -326,12 +331,31 @@ main(int argc, char** argv)
 	tcflush(serial, TCIFLUSH);
 	tcsetattr(serial, TCSANOW, &newtio);
 
+	if (arguments.printonly) 
+	{
+		printf("Super debug mode: Only printing the signal to screen. Nothing else.\n");
+	}
+
 	/* 
 	 * read commands
 	 */
 
 	while ( TRUE ) 
 	{   
+
+		/* 
+		 * super-debug mode: only print to screen whatever
+		 * comes through the serial port.
+		 */
+
+		if (arguments.printonly) 
+		{
+			read(serial, buf, 1);
+			printf("%d ", (int) buf[0]);
+			fflush(stdout);
+			continue;
+		}
+
 		/* 
 		 * every MIDI command is made of 3 bytes, where the 1st is the
 		 * only one with MSB=1
