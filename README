@@ -7,15 +7,17 @@ COMPILATION
 The ttyMIDI source code is comprised of a single C file.  To compile it, just
 run the following command:
 
-	gcc ttymidi.c -o ttymidi -lasound
+	make
 
 This program depends on libasound2, so you should have the development headers
 for that installed. In Debian or Ubuntu, you can install it by running:
 
-	apt-get install libasound-dev
+	apt-get install libasound2-dev
 
 After you compile ttyMIDI, you may wish to copy it to /usr/bin for easy
-access.
+access. This can be done simply by following command:
+
+	sudo make install
 
 USAGE 
 
@@ -44,6 +46,10 @@ compatible program.  This is done in the following manner:
 	aconnect -o                       # list available MIDI output clients
 	aconnect 128:0 129:0              # where 128 and 129 are the client numbers for
                                       # ttyMIDI and timidity
+
+Further, ttyMIDI creates an ALSA MIDI input port that feeds incoming MIDI events 
+back to the serial port. Before better documentation exists, check the header file of 
+the ardumidi library to figure out how to read this data at the Arduino end.
 
 If you would like to use a GUI to connect your MIDI clients, there are many
 available.  One of my favorites is qjackctl.

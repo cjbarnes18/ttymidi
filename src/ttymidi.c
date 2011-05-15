@@ -25,6 +25,8 @@
 #include <stdio.h>
 #include <argp.h>
 #include <alsa/asoundlib.h>
+#include <signal.h>
+#include <pthread.h>
 
 #define FALSE                         0
 #define TRUE                          1
@@ -35,17 +37,19 @@
 /* change this definition for the correct port */
 //#define _POSIX_SOURCE 1 /* POSIX compliant source */
 
-
+int run;
+int serial;
+int port_out_id;
 
 /* --------------------------------------------------------------------- */
 // Program options
 
 static struct argp_option options[] = 
 {
-	{"serial device", 's', "DEV" , 0, "Serial device to use. Default = /dev/ttyS0" },
-	{"baud rate"    , 'b', "BAUD", 0, "Serial port baud rate. Default = 115200" },
+	{"serialdevice" , 's', "DEV" , 0, "Serial device to use. Default = /dev/ttyUSB0" },
+	{"baudrate"     , 'b', "BAUD", 0, "Serial port baud rate. Default = 115200" },
 	{"verbose"      , 'v', 0     , 0, "For debugging: Produce verbose output" },
-	{"print only"   , 'p', 0     , 0, "Super debugging: Print values read from serial -- and do nothing else" },
+	{"printonly"    , 'p', 0     , 0, "Super debugging: Print values read from serial -- and do nothing else" },
 	{"quiet"        , 'q', 0     , 0, "Don't produce any output, even when the print command is sent" },
 	{ 0 }
 };
@@ -56,6 +60,12 @@ typedef struct _arguments
 	char serialdevice[MAX_DEV_STR_LEN];
 	int  baudrate;
 } arguments_t;
+
+void exit_cli(int sig)
+{
+	run = FALSE;
+	printf("ttymidi closing down ... ");
+}
 
 static error_t parse_opt (int key, char *arg, struct argp_state *state)
 {
@@ -108,7 +118,7 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 
 void arg_set_defaults(arguments_t *arguments)
 {
-	char *serialdevice_temp = "/dev/ttyS0";
+	char *serialdevice_temp = "/dev/ttyUSB0";
 	arguments->printonly    = 0;
 	arguments->silent       = 0;
 	arguments->verbose      = 0;
@@ -116,9 +126,9 @@ void arg_set_defaults(arguments_t *arguments)
 	strncpy(arguments->serialdevice, serialdevice_temp, MAX_DEV_STR_LEN);
 }
 
-const char *argp_program_version     = "ttyjack 0.1";
+const char *argp_program_version     = "ttymidi 0.1";
 const char *argp_program_bug_address = "tvst@hotmail.com";
-static char doc[]       = "ttyjack - Serial port to JACK MIDI interface.";
+static char doc[]       = "ttymidi - Connect serial port devices to ALSA MIDI programs!";
 static struct argp argp = { options, parse_opt, 0, doc };
 arguments_t arguments;
 
@@ -129,7 +139,7 @@ arguments_t arguments;
 
 int open_seq(snd_seq_t** seq) 
 {
-	int port_out_id;
+	int port_out_id, port_in_id; // actually port_in_id is not needed nor used anywhere
 
 	if (snd_seq_open(seq, "default", SND_SEQ_OPEN_DUPLEX, 0) < 0) 
 	{
@@ -141,6 +151,13 @@ int open_seq(snd_seq_t** seq)
 
 	if ((port_out_id = snd_seq_create_simple_port(*seq, "ttymidi",
 					SND_SEQ_PORT_CAP_READ|SND_SEQ_PORT_CAP_SUBS_READ,
+					SND_SEQ_PORT_TYPE_APPLICATION)) < 0) 
+	{
+		fprintf(stderr, "Error creating sequencer port.\n");
+	}
+
+	if ((port_in_id = snd_seq_create_simple_port(*seq, "ttymidi",
+					SND_SEQ_PORT_CAP_WRITE|SND_SEQ_PORT_CAP_SUBS_WRITE,
 					SND_SEQ_PORT_TYPE_APPLICATION)) < 0) 
 	{
 		fprintf(stderr, "Error creating sequencer port.\n");
@@ -177,13 +194,13 @@ void parse_midi_command(snd_seq_t* seq, int port_out_id, char *buf)
 	   buf[1] --> param1
 	   buf[2] --> param2        (param2 should always be transmitted)
    */
-	
+
 	snd_seq_event_t ev;
 	snd_seq_ev_clear(&ev);
 	snd_seq_ev_set_direct(&ev);
 	snd_seq_ev_set_source(&ev, port_out_id);
 	snd_seq_ev_set_subs(&ev);
-	
+
 	int operation, channel, param1, param2;
 
 	operation = buf[0] & 0xF0;
@@ -195,45 +212,45 @@ void parse_midi_command(snd_seq_t* seq, int port_out_id, char *buf)
 	{
 		case 0x80:
 			if (!arguments.silent && arguments.verbose) 
-				printf("0x%x Note off           %03u %03u %03u\n", operation, channel, param1, param2);
+				printf("Serial  0x%x Note off           %03u %03u %03u\n", operation, channel, param1, param2);
 			snd_seq_ev_set_noteoff(&ev, channel, param1, param2);
 			break;
 			
 		case 0x90:
 			if (!arguments.silent && arguments.verbose) 
-				printf("0x%x Note on            %03u %03u %03u\n", operation, channel, param1, param2);
+				printf("Serial  0x%x Note on            %03u %03u %03u\n", operation, channel, param1, param2);
 			snd_seq_ev_set_noteon(&ev, channel, param1, param2);
 			break;
 			
 		case 0xA0:
 			if (!arguments.silent && arguments.verbose) 
-				printf("0x%x Pressure change    %03u %03u %03u\n", operation, channel, param1, param2);
+				printf("Serial  0x%x Pressure change    %03u %03u %03u\n", operation, channel, param1, param2);
 			snd_seq_ev_set_keypress(&ev, channel, param1, param2);
 			break;
 
 		case 0xB0:
 			if (!arguments.silent && arguments.verbose) 
-				printf("0x%x Controller change  %03u %03u %03u\n", operation, channel, param1, param2);
+				printf("Serial  0x%x Controller change  %03u %03u %03u\n", operation, channel, param1, param2);
 			snd_seq_ev_set_controller(&ev, channel, param1, param2);
 			break;
 
 		case 0xC0:
 			if (!arguments.silent && arguments.verbose) 
-				printf("0x%x Program change     %03u %03u\n", operation, channel, param1);
+				printf("Serial  0x%x Program change     %03u %03u\n", operation, channel, param1);
 			snd_seq_ev_set_pgmchange(&ev, channel, param1);
 			break;
 
 		case 0xD0:
 			if (!arguments.silent && arguments.verbose) 
-				printf("0x%x Channel change     %03u %03u\n", operation, channel, param1);
+				printf("Serial  0x%x Channel change     %03u %03u\n", operation, channel, param1);
 			snd_seq_ev_set_chanpress(&ev, channel, param1);
 			break;
 
 		case 0xE0:
-			param1 = (param1 & 0x0F) + ((param2 & 0x0F) << 7);
+			param1 = (param1 & 0x7F) + ((param2 & 0x7F) << 7);
 			if (!arguments.silent && arguments.verbose) 
-				printf("0x%x Pitch bend         %03u %05u\n", operation, channel, param1);
-			snd_seq_ev_set_pitchbend(&ev, channel, param1);
+				printf("Serial  0x%x Pitch bend         %03u %05i\n", operation, channel, param1);
+			snd_seq_ev_set_pitchbend(&ev, channel, param1 - 8192); // in alsa MIDI we want signed int
 			break;
 
 		/* Not implementing system commands (0xF0) */
@@ -248,7 +265,170 @@ void parse_midi_command(snd_seq_t* seq, int port_out_id, char *buf)
 	snd_seq_drain_output(seq);
 }
 
+void write_midi_action_to_serial_port(snd_seq_t* seq_handle) 
+{
+	snd_seq_event_t* ev;
+	char bytes[] = {0x00, 0x00, 0x00}; 
 
+	do 
+	{
+		snd_seq_event_input(seq_handle, &ev);
+
+		switch (ev->type) 
+		{
+
+			case SND_SEQ_EVENT_NOTEOFF: 
+				bytes[0] = 0x80 + ev->data.control.channel;
+				bytes[1] = ev->data.note.note;
+				bytes[2] = ev->data.note.velocity;        
+				if (!arguments.silent && arguments.verbose) 
+					printf("Alsa    0x%x Note off           %03u %03u %03u\n", bytes[0]&0xF0, bytes[0]&0xF, bytes[1], bytes[2]); 
+				break; 
+
+			case SND_SEQ_EVENT_NOTEON:
+				bytes[0] = 0x90 + ev->data.control.channel;
+				bytes[1] = ev->data.note.note;
+				bytes[2] = ev->data.note.velocity;        
+				if (!arguments.silent && arguments.verbose) 
+					printf("Alsa    0x%x Note on            %03u %03u %03u\n", bytes[0]&0xF0, bytes[0]&0xF, bytes[1], bytes[2]); 
+				break;        
+
+			case SND_SEQ_EVENT_KEYPRESS: 
+				bytes[0] = 0x90 + ev->data.control.channel;
+				bytes[1] = ev->data.note.note;
+				bytes[2] = ev->data.note.velocity;        
+				if (!arguments.silent && arguments.verbose) 
+					printf("Alsa    0x%x Pressure change    %03u %03u %03u\n", bytes[0]&0xF0, bytes[0]&0xF, bytes[1], bytes[2]); 
+				break;       
+
+			case SND_SEQ_EVENT_CONTROLLER: 
+				bytes[0] = 0xB0 + ev->data.control.channel;
+				bytes[1] = ev->data.control.param;
+				bytes[2] = ev->data.control.value;
+				if (!arguments.silent && arguments.verbose) 
+					printf("Alsa    0x%x Controller change  %03u %03u %03u\n", bytes[0]&0xF0, bytes[0]&0xF, bytes[1], bytes[2]); 
+				break;   
+
+			case SND_SEQ_EVENT_PGMCHANGE: 
+				bytes[0] = 0xC0 + ev->data.control.channel;
+				bytes[1] = ev->data.control.value;  // ???
+				if (!arguments.silent && arguments.verbose) 
+					printf("Alsa    0x%x Program change     %03u %03u %03u\n", bytes[0]&0xF0, bytes[0]&0xF, bytes[1], bytes[2]); 
+				break;  
+
+			case SND_SEQ_EVENT_CHANPRESS: 
+				bytes[0] = 0xD0 + ev->data.control.channel;
+				bytes[1] = ev->data.control.value;  // ???
+				if (!arguments.silent && arguments.verbose) 
+					printf("Alsa    0x%x Channel change     %03u %03u %03u\n", bytes[0]&0xF0, bytes[0]&0xF, bytes[1], bytes[2]); 
+				break;  
+
+			case SND_SEQ_EVENT_PITCHBEND:
+				bytes[0] = 0xE0 + ev->data.control.channel;
+				ev->data.control.value += 8192;
+				bytes[1] = (int)ev->data.control.value & 0x7F;
+				bytes[2] = (int)ev->data.control.value >> 7;
+				if (!arguments.silent && arguments.verbose) 
+					printf("Alsa    0x%x Pitch bend         %03u %5d\n", bytes[0]&0xF0, bytes[0]&0xF, ev->data.control.value);
+				break;
+
+			default:
+				break;
+		}
+
+		if (bytes[0]!=0x00)
+		{
+			bytes[1] = (bytes[1] & 0x7F); // just to be sure that one bit is really zero
+			bytes[2] = (bytes[2] & 0x7F);
+			write(serial, bytes, 3);
+		}
+
+		snd_seq_free_event(ev);
+
+	} while (snd_seq_event_input_pending(seq_handle, 0) > 0);
+}
+
+
+void* read_midi_from_alsa(void* seq) 
+{
+	int npfd;
+	struct pollfd* pfd;
+	snd_seq_t* seq_handle;
+
+	seq_handle = seq;
+
+	npfd = snd_seq_poll_descriptors_count(seq_handle, POLLIN);
+	pfd = (struct pollfd*) alloca(npfd * sizeof(struct pollfd));
+	snd_seq_poll_descriptors(seq_handle, pfd, npfd, POLLIN);	
+
+	while (run) 
+	{
+		if (poll(pfd,npfd, 100) > 0) 
+		{
+			write_midi_action_to_serial_port(seq_handle);
+		}
+	}	
+
+	printf("Stopping [PC]->[Hardware] communication...");
+}
+
+void* read_midi_from_serial_port(void* seq) 
+{
+	char buf[3], msg[MAX_MSG_SIZE];
+	int i, msglen;
+
+	while (run) 
+	{
+		/* 
+		 * super-debug mode: only print to screen whatever
+		 * comes through the serial port.
+		 */
+
+		if (arguments.printonly) 
+		{
+			read(serial, buf, 1);
+			printf("%d ", (int) buf[0]);
+			fflush(stdout);
+			continue;
+		}
+
+		/* 
+		 * every MIDI command is made of 3 bytes, where the 1st is the
+		 * only one with MSB=1
+		 *
+		 * so let's align to the beginning of a midi command.
+		 */
+
+		do read(serial, buf, 1);
+		while (buf[0] >> 7 == 0);
+
+		/* now that we have the first byte, lets read the other two */
+		read(serial, buf+1, 2);
+
+		/* print comment message (the ones that start with 0xFF 0x00 0x00 */
+		if (buf[0] == (char) 0xFF && buf[1] == (char) 0x00 && buf[2] == (char) 0x00)
+		{
+			read(serial, buf, 1);
+			msglen = buf[0];
+			if (msglen > MAX_MSG_SIZE-1) msglen = MAX_MSG_SIZE-1;
+
+			read(serial, msg, msglen);
+
+			if (arguments.silent) continue;
+
+			/* make sure the string ends with a null character */
+			msg[msglen] = 0;
+
+			puts("0xFF Non-MIDI message: ");
+			puts(msg);
+			putchar('\n');
+			fflush(stdout);
+		}
+
+		/* parse MIDI message */
+		else parse_midi_command(seq, port_out_id, buf);
+	}
+}
 
 /* --------------------------------------------------------------------- */
 // Main program
@@ -256,13 +436,9 @@ void parse_midi_command(snd_seq_t* seq, int port_out_id, char *buf)
 main(int argc, char** argv)
 {
 	//arguments arguments;
-	int serial;
 	struct termios oldtio, newtio;
-	char buf[3], msg[MAX_MSG_SIZE];
 	char* modem_device = "/dev/ttyS0";
 	snd_seq_t *seq;
-	int port_out_id;
-	int i, msglen;
 
 	arg_set_defaults(&arguments);
 	argp_parse(&argp, argc, argv, 0, 0, &arguments);
@@ -300,7 +476,7 @@ main(int argc, char** argv)
 	 * CLOCAL   : local connection, no modem contol
 	 * CREAD    : enable receiving characters
 	 */
-	newtio.c_cflag = arguments.baudrate | CRTSCTS | CS8 | CLOCAL | CREAD;
+	newtio.c_cflag = arguments.baudrate | CS8 | CLOCAL | CREAD; // CRTSCTS removed
 
 	/*
 	 * IGNPAR  : ignore bytes with parity errors
@@ -340,61 +516,27 @@ main(int argc, char** argv)
 	 * read commands
 	 */
 
-	while ( TRUE ) 
+	/* Starting thread that is polling alsa midi in port */
+	pthread_t midi_out_thread, midi_in_thread;
+	int iret1, iret2;
+	run = TRUE;
+	iret1 = pthread_create(&midi_out_thread, NULL, read_midi_from_alsa, (void*) seq);
+	/* And also thread for polling serial data. As serial is currently read in
+           blocking mode, by this we can enable ctrl+c quiting and avoid zombie
+           alsa ports when killing app with ctrl+z */
+	iret2 = pthread_create(&midi_in_thread, NULL, read_midi_from_serial_port, (void*) seq);
+	signal(SIGINT, exit_cli);
+
+	while (run)
 	{   
-
-		/* 
-		 * super-debug mode: only print to screen whatever
-		 * comes through the serial port.
-		 */
-
-		if (arguments.printonly) 
-		{
-			read(serial, buf, 1);
-			printf("%d ", (int) buf[0]);
-			fflush(stdout);
-			continue;
-		}
-
-		/* 
-		 * every MIDI command is made of 3 bytes, where the 1st is the
-		 * only one with MSB=1
-		 *
-		 * so let's align to the beginning of a midi command.
-		 */
-
-		do read(serial, buf, 1); 
-		while (buf[0] >> 7 == 0); 
-
-		/* now that we have the first byte, lets read the other two */
-		read(serial, buf+1, 2);
-
-		/* print comment message (the ones that start with 0xFF 0x00 0x00 */
-		if (buf[0] == (char) 0xFF && buf[1] == (char) 0x00 && buf[2] == (char) 0x00)
-		{
-			read(serial, buf, 1);
-			msglen = buf[0];
-			if (msglen > MAX_MSG_SIZE-1) msglen = MAX_MSG_SIZE-1;
-
-			read(serial, msg, msglen);
-
-			if (arguments.silent) continue;
-
-			/* make sure the string ends with a null character */
-			msg[msglen] = 0;
-
-			puts("0xFF Non-MIDI message: ");
-			puts(msg);
-			putchar('\n');
-			fflush(stdout);
-		}
-
-		/* parse MIDI message */
-		else parse_midi_command(seq, port_out_id, buf);
-
+		sleep(100);
 	}
+
+	void* status;
+	pthread_join(midi_out_thread, &status);
 
 	/* restore the old port settings */
 	tcsetattr(serial, TCSANOW, &oldtio);
+	printf("done!\n");
 }
 

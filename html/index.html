@@ -62,7 +62,7 @@
 		</p>
 
 		<p>
-		<strong>ttymidi</strong> creates an ALSA MIDI output port that can be 
+		<strong>ttymidi</strong> creates an ALSA MIDI input and output ports that can be 
 		interfaced to any compatible program. This is done in the following manner:
 		</p>
 
@@ -149,6 +149,7 @@ midi_printbytes(char* bytes, int len);</pre>
 		<p>
 		Where the parameters are in the range: channel (0&ndash;15), 
 		pitch-bend value (0&ndash;16383), all other values (0&ndash;127).
+        The center position of the pitch-bend wheel is 8192.
 		</p>
 
 		<p>
@@ -167,13 +168,37 @@ midi_printbytes(char* bytes, int len);</pre>
 		<code>MIDI_C0</code> can be used.
 		</p>
 
+		<p>
+		Similarly you can use constants to figure out type of incoming MIDI message:
+		</p>
+
+		<p>
+		<pre>if (midiMessage_available()>0) {
+	MidiMessage m = read_MidiMessage();
+	if (m.command == MIDI_NOTEON && m.channel == 0) {
+		analogWrite(m.param1, m.param2 * 2);
+	}
+}</pre>
+		</p>
+		 
+		<p>
+		There are a couple of things to keep in mind when using MIDI in features of
+		ardumidi. Firstly <code>midiMessage_available()</code> will always
+		flush the incoming Serial buffer of all non-MIDI data. In practice this
+		means that you can't mix using the Serial library and ardumidi
+		(unless you know what you are doing). Secondly the incoming Serial buffer
+		of arduino can store at most 42 MIDI commands so you have to take care
+		that buffer does not overflow. However this does not cause your patch to crash,
+		only couple MIDI messages are lost.
+		</p>
+	
 		<p>	
 		To install the <strong>ardumidi</strong> library, just copy its folder
-		into Arduino's <code>hardware/libraries</code> directory.
-		Also note that an example Arduino sketch is included in the 
-		<strong>ttymidi</strong> package. The file is called 
-		<code>ardumidi_test</code>, and is ready to be uploaded to your 
-		Arduino board. If everything works well, you should hear a C-minor
+		into Arduino's <code>sketchbook/libraries</code> directory.
+		Also note that an example Arduino sketches are included in the 
+		<strong>ttymidi</strong> package. They should appear under Examples
+		in Arduino IDE after you have succesfully installed the library.
+		For instance, <code>ardumidi_test</code>, will play one C-minor
 		chord every second.
 		</p>
 
@@ -353,10 +378,26 @@ byte range_msb = range >> 7;</pre>
 		</p>
 	</div>
 
+	<h2>Authors</h2>
+	<div class="sectiontext">
+		<p>
+			<dl>
+				<dt>Thiago Teixeira</dt>
+				<li>Original developer and maintainer.</li>
+
+				<dt>Jari Suominen</dt>
+				<li>Contributed the MIDI-out code.</li>
+			</dl>
+		</p>
+	</div>
+
 	<h2>Changelog</h2>
 	<div class="sectiontext">
 		<p>
 		<dl>
+			<dt>0.50</dt>
+			<li>Now with MIDI output capability!</li>
+
 			<dt>0.30</dt>
 			<li>Added "super debug mode". Activate it by pass "-p" (which stands for "print only").</li>
 
