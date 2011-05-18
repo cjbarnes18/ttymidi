@@ -14,7 +14,7 @@
     You should have received a copy of the GNU General Public License
     along with ttymidi.  If not, see <http://www.gnu.org/licenses/>.
 */
-// file version 0.12
+// file version 0.13
 
 #include "WProgram.h"
 #include "HardwareSerial.h"
@@ -80,3 +80,30 @@ void midi_comment(char* msg)
 	while (*ptr++) len++;
 	midi_printbytes(msg, len);
 }
+
+int midi_message_available() {
+	/* 
+	   This bit will check that next bytes to be read would actually
+	   have the midi status bit. If not it will remove uncorrect bytes
+	   from internal buffer 
+	   */
+	while ((Serial.available() > 0) && ((Serial.peek() & B10000000) != 0x80)) {
+		Serial.read();
+	}
+	return (Serial.available()/3);
+}
+
+MidiMessage read_midi_message() {
+	MidiMessage message;
+	byte midi_status = Serial.read();
+	message.command  = (midi_status & B11110000);
+	message.channel  = (midi_status & B00001111);
+	message.param1   = Serial.read();
+	message.param2   = Serial.read();
+	return message;
+}
+
+int get_pitch_bend(MidiMessage m) {
+	return (m.param1 & 0x7F) + ((m.param2 & 0x7F) << 7);
+}
+

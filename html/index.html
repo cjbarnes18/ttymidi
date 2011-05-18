@@ -139,6 +139,15 @@ midi_channel_pressure(byte channel, byte value);
 // Change pitch-bend wheel:
 midi_pitch_bend(byte channel, int value);
 
+// Check if a MIDI message has arrived from the PC
+int midi_message_available();
+
+// Get a MIDI message from the PC
+MidiMessage read_midi_message();
+
+// Get the pitch bend value from a MIDI message
+int get_pitch_bend(MidiMessage msg);
+
 // Send a comment:
 midi_comment(char* str);
 
@@ -169,23 +178,31 @@ midi_printbytes(char* bytes, int len);</pre>
 		</p>
 
 		<p>
-		Similarly you can use constants to figure out type of incoming MIDI message:
+		Similarly, when receiving MIDI messages from the PC, you can use 
+		constants to figure out type of the incoming message:
 		</p>
 
 		<p>
-		<pre>if (midiMessage_available()>0) {
-	MidiMessage m = read_MidiMessage();
-	if (m.command == MIDI_NOTEON && m.channel == 0) {
-		analogWrite(m.param1, m.param2 * 2);
+		<pre>if (midi_message_available() > 0) {
+	MidiMessage msg = read_midi_message();
+	if (msg.command == MIDI_NOTE_ON && msg.channel == 0) {
+		/* 
+		Since this is a "Note On" command, we know that 
+		- msg.param1 is the MIDI note 
+		- msg.param2 is the "velocity" of the note 
+
+		How do we know this? See the <a href="#miditable">table</a> below.
+		*/
 	}
 }</pre>
 		</p>
 		 
 		<p>
-		There are a couple of things to keep in mind when using MIDI in features of
-		ardumidi. Firstly <code>midiMessage_available()</code> will always
+		There are a couple of things to keep in mind when using <em>MIDI in</em> features of
+		<strong>ardumidi</strong>. Firstly <code>midi_message_available()</code> will always
 		flush the incoming Serial buffer of all non-MIDI data. In practice this
-		means that you can't mix using the Serial library and ardumidi
+		means that you can't mix using the Serial library and
+		<strong>ardumidi</strong>
 		(unless you know what you are doing). Secondly the incoming Serial buffer
 		of arduino can store at most 42 MIDI commands so you have to take care
 		that buffer does not overflow. However this does not cause your patch to crash,
@@ -229,6 +246,7 @@ status       parameter #1     parameter #2</pre>
 		</p>
 
 		<p>
+		<a name="miditable"></a>
 		<table>
 			<tr class="topheader">
 				<td></td>
@@ -298,7 +316,7 @@ status       parameter #1     parameter #2</pre>
 		One odd MIDI command is the <code>pitch bend</code>, whose parameter is a
 		14-bit number. For this reason, it is split into two parts: a least 
 		significant byte (LSB) and a most significant byte (MSB). These can be 
-		easily computed by quick logical and shift operations:
+		easily computed by quick logical <code>and</code> and <code>shift</code> operations:
 		</p>
 
 		<p>
