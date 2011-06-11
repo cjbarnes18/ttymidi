@@ -60,17 +60,15 @@ void midi_command(byte command, byte channel, byte param1, byte param2)
 	Serial.print(command | (channel & 0x0F), BYTE);
 	Serial.print(param1 & 0x7F, BYTE);
 	Serial.print(param2 & 0x7F, BYTE);
-	Serial.flush();
 }
 
-void midi_printbytes(char* msg, int len)
+void midi_print(char* msg, int len)
 {
 	Serial.print(0xFF, BYTE);
 	Serial.print(0x00, BYTE);
 	Serial.print(0x00, BYTE);
 	Serial.print(len , BYTE);
 	Serial.print(msg);
-	Serial.flush();
 }
 
 void midi_comment(char* msg)
