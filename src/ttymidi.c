@@ -27,6 +27,10 @@
 #include <alsa/asoundlib.h>
 #include <signal.h>
 #include <pthread.h>
+// Linux-specific
+#include <linux/serial.h>
+#include <linux/ioctl.h>
+#include <asm/ioctls.h>
 
 #define FALSE                         0
 #define TRUE                          1
@@ -64,7 +68,7 @@ typedef struct _arguments
 void exit_cli(int sig)
 {
 	run = FALSE;
-	printf("ttymidi closing down ... ");
+	printf("\rttymidi closing down ... ");
 }
 
 static error_t parse_opt (int key, char *arg, struct argp_state *state)
@@ -369,7 +373,7 @@ void* read_midi_from_alsa(void* seq)
 		}
 	}	
 
-	printf("Stopping [PC]->[Hardware] communication...");
+	printf("\nStopping [PC]->[Hardware] communication...");
 }
 
 void* read_midi_from_serial_port(void* seq) 
@@ -437,6 +441,7 @@ main(int argc, char** argv)
 {
 	//arguments arguments;
 	struct termios oldtio, newtio;
+	struct serial_struct ser_info;
 	char* modem_device = "/dev/ttyS0";
 	snd_seq_t *seq;
 
@@ -507,6 +512,11 @@ main(int argc, char** argv)
 	tcflush(serial, TCIFLUSH);
 	tcsetattr(serial, TCSANOW, &newtio);
 
+	// Linux-specific: enable low latency mode (FTDI "nagling off")
+	ioctl(serial, TIOCGSERIAL, &ser_info);
+	ser_info.flags |= ASYNC_LOW_LATENCY;
+	ioctl(serial, TIOCSSERIAL, &ser_info);
+
 	if (arguments.printonly) 
 	{
 		printf("Super debug mode: Only printing the signal to screen. Nothing else.\n");
@@ -526,6 +536,7 @@ main(int argc, char** argv)
            alsa ports when killing app with ctrl+z */
 	iret2 = pthread_create(&midi_in_thread, NULL, read_midi_from_serial_port, (void*) seq);
 	signal(SIGINT, exit_cli);
+	signal(SIGTERM, exit_cli);
 
 	while (run)
 	{   
@@ -537,6 +548,6 @@ main(int argc, char** argv)
 
 	/* restore the old port settings */
 	tcsetattr(serial, TCSANOW, &oldtio);
-	printf("done!\n");
+	printf("\ndone!\n");
 }
 
