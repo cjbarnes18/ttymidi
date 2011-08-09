@@ -55,6 +55,7 @@ static struct argp_option options[] =
 	{"verbose"      , 'v', 0     , 0, "For debugging: Produce verbose output" },
 	{"printonly"    , 'p', 0     , 0, "Super debugging: Print values read from serial -- and do nothing else" },
 	{"quiet"        , 'q', 0     , 0, "Don't produce any output, even when the print command is sent" },
+	{"name"		, 'n', "NAME", 0, "Name of the Alsa MIDI client. Default = ttymidi" },
 	{ 0 }
 };
 
@@ -63,6 +64,7 @@ typedef struct _arguments
 	int  silent, verbose, printonly;
 	char serialdevice[MAX_DEV_STR_LEN];
 	int  baudrate;
+	char name[MAX_DEV_STR_LEN];
 } arguments_t;
 
 void exit_cli(int sig)
@@ -92,6 +94,10 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 		case 's':
 			if (arg == NULL) break;
 			strncpy(arguments->serialdevice, arg, MAX_DEV_STR_LEN);
+			break;
+		case 'n':
+			if (arg == NULL) break;
+			strncpy(arguments->name, arg, MAX_DEV_STR_LEN);
 			break;
 		case 'b':
 			if (arg == NULL) break;
@@ -127,7 +133,9 @@ void arg_set_defaults(arguments_t *arguments)
 	arguments->silent       = 0;
 	arguments->verbose      = 0;
 	arguments->baudrate     = B115200;
+	char *name_tmp		= (char *)"ttymidi";
 	strncpy(arguments->serialdevice, serialdevice_temp, MAX_DEV_STR_LEN);
+	strncpy(arguments->name, name_tmp, MAX_DEV_STR_LEN);
 }
 
 const char *argp_program_version     = "ttymidi 0.1";
@@ -151,16 +159,16 @@ int open_seq(snd_seq_t** seq)
 		exit(1);
 	}
 
-	snd_seq_set_client_name(*seq, "ttymidi");
+	snd_seq_set_client_name(*seq, arguments.name);
 
-	if ((port_out_id = snd_seq_create_simple_port(*seq, "ttymidi",
+	if ((port_out_id = snd_seq_create_simple_port(*seq, "ttymidi MIDI out",
 					SND_SEQ_PORT_CAP_READ|SND_SEQ_PORT_CAP_SUBS_READ,
 					SND_SEQ_PORT_TYPE_APPLICATION)) < 0) 
 	{
 		fprintf(stderr, "Error creating sequencer port.\n");
 	}
 
-	if ((port_in_id = snd_seq_create_simple_port(*seq, "ttymidi",
+	if ((port_in_id = snd_seq_create_simple_port(*seq, "ttymidi MIDI in",
 					SND_SEQ_PORT_CAP_WRITE|SND_SEQ_PORT_CAP_SUBS_WRITE,
 					SND_SEQ_PORT_TYPE_APPLICATION)) < 0) 
 	{
