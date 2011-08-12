@@ -14,7 +14,7 @@
     You should have received a copy of the GNU General Public License
     along with ttymidi.  If not, see <http://www.gnu.org/licenses/>.
 */
-// file version 0.13
+// file version 0.60
 
 #ifndef ardumidi_h
 #define ardumidi_h
