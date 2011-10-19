@@ -8,7 +8,13 @@ http://www.arduino.cc/playground/Main/MIDILibrary
 
 When using MIDI library, please check our example patch as there is one small
 detail that you have to remember when using MIDI library together with
-ttymidi (you have to call Serial.begin(115200) after MIDI.begin(int) command. 
+ttymidi (you have to call Serial.begin(115200) after MIDI.begin(int) command.
+You can copy the example patch demonstrating this like so:
+
+cp -r MIDI /path/to/arduino/sketchbook/libraries/
+
+You should install MIDILibrary before doing this. Example patch will appear
+to examples dialog of Arduino IDE.
 
 If you still want to install the Arduino ttymidi library (which I so aptly
 named "ardumidi"), just copy the ttymidi folder into the Arduino libraries folder:

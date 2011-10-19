@@ -412,7 +412,7 @@ void* read_midi_from_serial_port(void* seq)
 		if (arguments.printonly) 
 		{
 			read(serial, buf, 1);
-			printf("%d ", (int) buf[0]);
+			printf("%x\t", (int) buf[0]&0xFF);
 			fflush(stdout);
 			continue;
 		}
@@ -429,7 +429,11 @@ void* read_midi_from_serial_port(void* seq)
 			if ((buf[0] & 0xF0) == 0xC0 || (buf[0] & 0xF0) == 0xD0) {
 				read(serial, buf+1, 1);
 			} else {
-				read(serial, buf+1, 2);
+				read(serial, buf+1, 1);
+				read(serial, buf+2, 1);
+				/* We have to either read two bytes in two separate
+                                   iterations or then wait until we know for sure
+                                   that there are two bytes to be read. */
 			}
 		} else {
 			/* We received data byte so running status will be used */
@@ -543,9 +547,9 @@ main(int argc, char** argv)
 	tcsetattr(serial, TCSANOW, &newtio);
 
 	// Linux-specific: enable low latency mode (FTDI "nagling off")
-	ioctl(serial, TIOCGSERIAL, &ser_info);
-	ser_info.flags |= ASYNC_LOW_LATENCY;
-	ioctl(serial, TIOCSSERIAL, &ser_info);
+//	ioctl(serial, TIOCGSERIAL, &ser_info);
+//	ser_info.flags |= ASYNC_LOW_LATENCY;
+//	ioctl(serial, TIOCSSERIAL, &ser_info);
 
 	if (arguments.printonly) 
 	{

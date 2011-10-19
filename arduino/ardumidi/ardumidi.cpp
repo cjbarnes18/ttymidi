@@ -94,6 +94,14 @@ int midi_message_available() {
 	while ((Serial.available() > 0) && ((Serial.peek() & B10000000) != 0x80)) {
 		Serial.read();
 	}
+
+	/* Well we don't exactly know how many commands there might be in the Serial buffer
+           so we'll just guess it according the type of message that happens to be waiting
+           in the buffer. At least we get first one right! */
+	byte command = Serial.peek() & 11110000;
+	if (command != MIDI_PROGRAM_CHANGE && command != MIDI_CHANNEL_PRESSURE) {
+		return (Serial.available()/2);
+	}
 	return (Serial.available()/3);
 }
 
@@ -103,7 +111,9 @@ MidiMessage read_midi_message() {
 	message.command  = (midi_status & B11110000);
 	message.channel  = (midi_status & B00001111);
 	message.param1   = Serial.read();
-	message.param2   = Serial.read();
+	if (message.command != MIDI_PROGRAM_CHANGE && message.command != MIDI_CHANNEL_PRESSURE) {
+		message.param2   = Serial.read();
+	}
 	return message;
 }
 
