@@ -42,12 +42,12 @@ void midi_controller_change(byte channel, byte control, byte value)
 
 void midi_program_change(byte channel, byte program)
 {
-	midi_command(0xC0, channel, program, 0);
+	midi_command_short(0xC0, channel, program);
 }
 
 void midi_channel_pressure(byte channel, byte value)
 {
-	midi_command(0xD0, channel, value, 0);
+	midi_command_short(0xD0, channel, value);
 }
 
 void midi_pitch_bend(byte channel, int value)
@@ -60,6 +60,12 @@ void midi_command(byte command, byte channel, byte param1, byte param2)
 	Serial.print(command | (channel & 0x0F), BYTE);
 	Serial.print(param1 & 0x7F, BYTE);
 	Serial.print(param2 & 0x7F, BYTE);
+}
+
+void midi_command_short(byte command, byte channel, byte param1)
+{
+	Serial.print(command | (channel & 0x0F), BYTE);
+	Serial.print(param1 & 0x7F, BYTE);
 }
 
 void midi_print(char* msg, int len)
@@ -76,7 +82,7 @@ void midi_comment(char* msg)
 	int   len = 0;
 	char* ptr = msg;
 	while (*ptr++) len++;
-	midi_printbytes(msg, len);
+	midi_print(msg, len);
 }
 
 int midi_message_available() {

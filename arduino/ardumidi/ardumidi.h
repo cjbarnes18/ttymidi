@@ -65,6 +65,7 @@ void midi_program_change(byte channel, byte program);
 void midi_channel_pressure(byte channel, byte value);
 void midi_pitch_bend(byte channel, int value);
 void midi_command(byte command, byte channel, byte param1, byte param2);
+void midi_command_short(byte command, byte channel, byte param1);
 
 // MIDI out
 int midi_message_available();

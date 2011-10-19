@@ -161,14 +161,14 @@ int open_seq(snd_seq_t** seq)
 
 	snd_seq_set_client_name(*seq, arguments.name);
 
-	if ((port_out_id = snd_seq_create_simple_port(*seq, "ttymidi MIDI out",
+	if ((port_out_id = snd_seq_create_simple_port(*seq, "MIDI out",
 					SND_SEQ_PORT_CAP_READ|SND_SEQ_PORT_CAP_SUBS_READ,
 					SND_SEQ_PORT_TYPE_APPLICATION)) < 0) 
 	{
 		fprintf(stderr, "Error creating sequencer port.\n");
 	}
 
-	if ((port_in_id = snd_seq_create_simple_port(*seq, "ttymidi MIDI in",
+	if ((port_in_id = snd_seq_create_simple_port(*seq, "MIDI in",
 					SND_SEQ_PORT_CAP_WRITE|SND_SEQ_PORT_CAP_SUBS_WRITE,
 					SND_SEQ_PORT_TYPE_APPLICATION)) < 0) 
 	{
@@ -204,7 +204,7 @@ void parse_midi_command(snd_seq_t* seq, int port_out_id, char *buf)
 	
 	   buf[0] --> operation/channel
 	   buf[1] --> param1
-	   buf[2] --> param2        (param2 should always be transmitted)
+	   buf[2] --> param2        (param2 not transmitted on program change or key press)
    */
 
 	snd_seq_event_t ev;
@@ -280,7 +280,7 @@ void parse_midi_command(snd_seq_t* seq, int port_out_id, char *buf)
 void write_midi_action_to_serial_port(snd_seq_t* seq_handle) 
 {
 	snd_seq_event_t* ev;
-	char bytes[] = {0x00, 0x00, 0x00}; 
+	char bytes[] = {0x00, 0x00, 0xFF}; 
 
 	do 
 	{
@@ -323,14 +323,14 @@ void write_midi_action_to_serial_port(snd_seq_t* seq_handle)
 
 			case SND_SEQ_EVENT_PGMCHANGE: 
 				bytes[0] = 0xC0 + ev->data.control.channel;
-				bytes[1] = ev->data.control.value;  // ???
+				bytes[1] = ev->data.control.value;
 				if (!arguments.silent && arguments.verbose) 
 					printf("Alsa    0x%x Program change     %03u %03u %03u\n", bytes[0]&0xF0, bytes[0]&0xF, bytes[1], bytes[2]); 
 				break;  
 
 			case SND_SEQ_EVENT_CHANPRESS: 
 				bytes[0] = 0xD0 + ev->data.control.channel;
-				bytes[1] = ev->data.control.value;  // ???
+				bytes[1] = ev->data.control.value;
 				if (!arguments.silent && arguments.verbose) 
 					printf("Alsa    0x%x Channel change     %03u %03u %03u\n", bytes[0]&0xF0, bytes[0]&0xF, bytes[1], bytes[2]); 
 				break;  
@@ -351,8 +351,12 @@ void write_midi_action_to_serial_port(snd_seq_t* seq_handle)
 		if (bytes[0]!=0x00)
 		{
 			bytes[1] = (bytes[1] & 0x7F); // just to be sure that one bit is really zero
-			bytes[2] = (bytes[2] & 0x7F);
-			write(serial, bytes, 3);
+			if (bytes[2]==0xFF) {
+				write(serial, bytes, 2);
+			} else {
+				bytes[2] = (bytes[2] & 0x7F);
+				write(serial, bytes, 3);
+			}
 		}
 
 		snd_seq_free_event(ev);
@@ -388,6 +392,15 @@ void* read_midi_from_serial_port(void* seq)
 {
 	char buf[3], msg[MAX_MSG_SIZE];
 	int i, msglen;
+	
+	buf[0] = 0x00;
+	char tmp[1];
+
+	/* Lets first fast forward to first status byte... */
+	if (!arguments.printonly) {
+		do read(serial, buf, 1);
+		while (buf[0] >> 7 == 0);
+	}
 
 	while (run) 
 	{
@@ -405,18 +418,27 @@ void* read_midi_from_serial_port(void* seq)
 		}
 
 		/* 
-		 * every MIDI command is made of 3 bytes, where the 1st is the
-		 * only one with MSB=1
-		 *
 		 * so let's align to the beginning of a midi command.
 		 */
 
-		do read(serial, buf, 1);
-		while (buf[0] >> 7 == 0);
+		read(serial, tmp, 1);
 
-		/* now that we have the first byte, lets read the other two */
-		read(serial, buf+1, 2);
-
+		if (tmp[0] >> 7 != 0) {
+			/* Status byte was received */
+			buf[0] = tmp[0];
+			if ((buf[0] & 0xF0) == 0xC0 || (buf[0] & 0xF0) == 0xD0) {
+				read(serial, buf+1, 1);
+			} else {
+				read(serial, buf+1, 2);
+			}
+		} else {
+			/* We received data byte so running status will be used */
+			buf[1] = tmp[0];
+			if ((buf[0] & 0xF0) != 0xC0 && (buf[0] & 0xF0) != 0xD0) {
+				read(serial, buf+2, 1);
+			}
+		}
+		
 		/* print comment message (the ones that start with 0xFF 0x00 0x00 */
 		if (buf[0] == (char) 0xFF && buf[1] == (char) 0x00 && buf[2] == (char) 0x00)
 		{
