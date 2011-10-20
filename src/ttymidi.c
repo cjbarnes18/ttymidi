@@ -394,9 +394,6 @@ void* read_midi_from_serial_port(void* seq)
 	char buf[3], msg[MAX_MSG_SIZE];
 	int i, msglen;
 	
-	buf[0] = 0x00;
-	char tmp[1];
-
 	/* Lets first fast forward to first status byte... */
 	if (!arguments.printonly) {
 		do read(serial, buf, 1);
@@ -422,28 +419,33 @@ void* read_midi_from_serial_port(void* seq)
 		 * so let's align to the beginning of a midi command.
 		 */
 
-		read(serial, tmp, 1);
+		int i = 1;
 
-		if (tmp[0] >> 7 != 0) {
-			/* Status byte was received */
-			buf[0] = tmp[0];
-			if ((buf[0] & 0xF0) == 0xC0 || (buf[0] & 0xF0) == 0xD0) {
-				read(serial, buf+1, 1);
+		while (i < 3) {
+			read(serial, buf+i, 1);
+
+			if (buf[i] >> 7 != 0) {
+				/* Status byte received and will always be first bit!*/
+				buf[0] = buf[i];
+				i = 1;
 			} else {
-				read(serial, buf+1, 1);
-				read(serial, buf+2, 1);
-				/* We have to either read two bytes in two separate
-                                   iterations or then wait until we know for sure
-                                   that there are two bytes to be read. */
+				/* Data byte received */
+				if (i == 2) {
+					/* It was 2nd data byte so we have a MIDI event
+					   process! */
+					i = 3;
+				} else {
+					/* Lets figure out are we done or should we read one more byte. */
+					if ((buf[0] & 0xF0) == 0xC0 || (buf[0] & 0xF0) == 0xD0) {
+						i = 3;
+					} else {
+						i = 2;
+					}
+				}
 			}
-		} else {
-			/* We received data byte so running status will be used */
-			buf[1] = tmp[0];
-			if ((buf[0] & 0xF0) != 0xC0 && (buf[0] & 0xF0) != 0xD0) {
-				read(serial, buf+2, 1);
-			}
+
 		}
-		
+
 		/* print comment message (the ones that start with 0xFF 0x00 0x00 */
 		if (buf[0] == (char) 0xFF && buf[1] == (char) 0x00 && buf[2] == (char) 0x00)
 		{
