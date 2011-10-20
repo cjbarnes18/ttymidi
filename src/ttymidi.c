@@ -112,7 +112,8 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 					case 19200  : arguments->baudrate = B19200 ; break;
 					case 38400  : arguments->baudrate = B38400 ; break;
 					case 57600  : arguments->baudrate = B57600 ; break;
-					case 115200 : default : arguments->baudrate = B115200;
+					case 115200 : arguments->baudrate = B115200; break;
+					default: printf("Baud rate %i is not supported.\n",baud_temp); exit(1);
 				}
 
 		case ARGP_KEY_ARG:
