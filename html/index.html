@@ -34,26 +34,41 @@
 	<h2>Usage</h2>
 	<div class="sectiontext">
 		<p>
-		If are using an Arduino board, you must first program it with the
+		If you are using an Arduino board, simplest will be to use
+		<a href="http://www.arduino.cc/playground/Main/MIDILibrary">
+                Arduino MIDI library</a>, as described in the following sections.
+                You may also use less sophisticated ardumidi library that is provided
+                with ttymidi download package. If you are
+		using another device, you should read the rest of this page to see how
+		your device should communicate. Once your device is programmed and
+		connected to your PC, <strong>ttymidi</strong> is executed in the
+		following manner:</p>
+		
+<!--		If are using an Arduino board, you must first program it with the
 		provided MIDI library, as described in the next section. If you are
 		using another device, you should read the rest of this page to see how
 		your device should communicate. Once your device is programmed and
 		connected to your PC, <strong>ttymidi</strong> is executed in the
-		following manner:
+		following manner: -->
 		</p>
 
 		<p>
-		<pre>ttymidi -s /dev/ttyS0 -b 2400</pre>
+		<pre>ttymidi -s /dev/ttyS0 -b 9600</pre>
 		</p>
 
 		<p>
 		Where <code>/dev/ttyS0</code> is the serial port you want to read from,
-		and <code>2400</code> is the bitrate. For my Arduino, I use the USB port
-		at 115200bps (the default rate for <strong>ttymidi</strong>):
+		and <code>9600</code> is the bitrate. For Arduino with serial connection
+                runnning at 115200bps (the default rate for <strong>ttymidi</strong>)
+                the command would be:
 		</p>
 
 		<p>
+		Arduino Diecimila:
 		<pre>ttymidi -s /dev/ttyUSB0 -v</pre>
+		</p>
+		<p>Arduino UNO:
+		<pre>ttymidi -s /dev/ttyACM0 -v</pre>
 		</p>
 
 		<p>
@@ -102,17 +117,41 @@ aconnect 128:0 129:0
 		and <a href="http://www.ardour.org">ardour</a>, 
 		to cite a few.
 		</p>
+
+		<p>If you are using automated patchbay connecting application, such as
+		the patchbay feature of qjackctl or <a href="http://sourceforge.net/projects/aj-snapshot/">
+		aj-snapshot</a> you might want to rename the name of ttymidi client created by using
+		<code>-n</code> flag.</p>
+		<p><pre>ttymidi -s /dev/ttyUSB0 -v -n my_weird_controller</pre></p>
+			
 	</div>
 	
 
 	<h2>Programming your serial device</h2>
-	<h3>Arduino interface</h3>
+	<h3>Arduino MIDI library</h3>
 	<div class="sectiontext">
-
-		<p>
-		To interface to <strong>ttymidi</strong>, the serial-attached device must
-		send data in a specific MIDI-like format, which has only a few small 
-		differences from the MIDI specification. 
+		<p>ttymidi is nowadays compatible with
+                <a href="http://www.arduino.cc/playground/Main/MIDILibrary">Arduino MIDI library</a>
+		and we strongly recommend using it when communicating from Arduino to ttymidi.
+		You only need to remember to call <code>Serial.begin(int baud_rate)</code>
+		immediately after <code>MIDI.begin(int channel)</code> on your patch as
+		the serial port of your computer is not able to operate at MIDI baud rate
+		that MIDI library is using. For example:</p>
+		<p><pre>
+void setup() {
+  MIDI.begin(4);        // will listen incoming MIDI at channel 4
+  Serial.begin(115200); // will change baud rate of MIDI traffic from 31250 to 115200
+}
+</pre></p>		
+		<p>You'll find MIDI library examples with these changes made in ttymidi
+                download package.</p>
+</div>
+<h3>Arduino interface</h3>
+<div class="sectiontext">
+		<p>This chapter explains how to use deprecated (but still functional)
+                ardumidi library instead of Arduino MIDI library. To interface to
+                <strong>ttymidi</strong>, the serial-attached device must
+		send data in MIDI-format. 
 		In the case of Arduino boards, a library is provided that abstracts all
 		the nitty-gritty details away. Below is a list of the available 
 		functions:
@@ -227,9 +266,8 @@ midi_printbytes(char* bytes, int len);</pre>
 	<h3>General interface</h3>
 		<p>
 		If you are using another serial device in place of the Arduino, you'll
-		need to program it to follow the specification described here. Every 
-		command sent to <strong>ttymidi</strong> is comprised of 3 bytes 
-		(whereas in the MIDI spec some commands consist of 2 bytes):
+		need to program it to follow the MIDI specification. To sum this up, most
+		of the commands sent to <strong>ttymidi</strong> are comprised of 3 bytes:
 		</p>
 
 		<p>
@@ -282,13 +320,13 @@ status       parameter #1     parameter #2</pre>
 				<th class="leftheader">program change</th>
 				<td class="hex">0xC0-0xCF</td>
 				<td>program</td>
-				<td>0</td>
+				<td>-</td>
 			</tr>
 			<tr class="even">
 				<th class="leftheader">channel pressure</th>
 				<td class="hex">0xD0-0xDF</td>
 				<td>value</td>
-				<td>0</td>
+				<td>-</td>
 			</tr>
 			<tr class="odd">
 				<th class="leftheader">pitch bend</th>
@@ -309,7 +347,8 @@ status       parameter #1     parameter #2</pre>
 		Most of these commands and parameters are self-explanatory. All parameters
 		are given as a number in the range 0&ndash;127. That is, they're all 7-bit
 		numbers with a 0 padded to their left (i.e.  <code>0xxxxxxx</code>) in order
-		to make up 1 full byte (8 bits). 
+		to make up 1 full byte (8 bits). For channel pressure and program change you
+		should send only one data byte.
 		</p>
 
 		<p>
@@ -339,7 +378,7 @@ byte range_msb = range >> 7;</pre>
 
 		<p>
 		You may have noticed that, for all commands, the 1st byte always has a 1
-	   	as the most-significant bit, while the other 2 bytes always have a 0.
+	   	as the most-significant bit, while the other 2 (or 1) bytes always have a 0.
 		This comes from the MIDI spec, and is used by <strong>ttymidi</strong>
 		for data alignment purposes. Do not try to change that in your 
 		serial device's program, or it will royally mess things up.
@@ -355,7 +394,8 @@ byte range_msb = range >> 7;</pre>
 		</p>
 		
 		<p>
-		The archive includes the <strong>ttymidi</strong> program as
+		The archive includes the <strong>ttymidi</strong> program, examples
+		for <strong>Arduino MIDI library</strong> as
 		well as the <strong>ardumidi</strong> libraries for Arduino. Also, don't 
 		forget to read the <code>README</code> file in that is included in the 
 		archive. It has important information about compiling <strong>ttymidi</strong>.
@@ -383,6 +423,8 @@ byte range_msb = range >> 7;</pre>
 		<p>
 		<ul class="nobullets">
 			<li><a href="http://www.arduino.cc">Arduino</a></li>
+			<li><a href="http://www.arduino.cc/playground/Main/MIDILibrary">
+                Arduino MIDI library</a></li>
 			<li><a href="http://www.indiana.edu/~emusic/etext/MIDI/chapter3_MIDI4.shtml">How does MIDI work?</a> &mdash; by Indiana University's CECM</li>
 			<li><a href="http://itp.nyu.edu/physcomp/Labs/MIDIOutput">Arduino MIDI output board</a> &mdash; a physical alternative to <strong>ttymidi</strong>
 			<li><a href="http://www.suse.de/~mana/">Matthias Nagorni's website</a> &mdash; examples for ALSA programming</li>
