@@ -349,16 +349,23 @@ void write_midi_action_to_serial_port(snd_seq_t* seq_handle)
 				break;
 		}
 
-		if (bytes[0]!=0x00)
+    bytes[1] = (bytes[1] & 0x7F);
+
+    switch (ev->type) 
 		{
-			bytes[1] = (bytes[1] & 0x7F); // just to be sure that one bit is really zero
-			if (bytes[2]==0xFF) {
-				write(serial, bytes, 2);
-			} else {
-				bytes[2] = (bytes[2] & 0x7F);
+      case SND_SEQ_EVENT_NOTEOFF:
+      case SND_SEQ_EVENT_NOTEON:
+      case SND_SEQ_EVENT_KEYPRESS: 
+      case SND_SEQ_EVENT_CONTROLLER: 
+      case SND_SEQ_EVENT_PITCHBEND:
+        bytes[2] = (bytes[2] & 0x7F);
 				write(serial, bytes, 3);
-			}
-		}
+        break;
+      case SND_SEQ_EVENT_PGMCHANGE: 
+      case SND_SEQ_EVENT_CHANPRESS:
+        write(serial, bytes, 2);
+        break;
+    }
 
 		snd_seq_free_event(ev);
 
