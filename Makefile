@@ -3,7 +3,7 @@ all:
 clean:
 	rm ttymidi
 install:
-	mkdir -p $(DESTDIR)/usr/bin
-	cp ttymidi $(DESTDIR)/usr/bin
+	mkdir -p $(DESTDIR)/bin
+	cp ttymidi $(DESTDIR)/bin
 uninstall:
-	rm $(DESTDIR)/usr/bin/ttymidi
+	rm $(DESTDIR)/bin/ttymidi
