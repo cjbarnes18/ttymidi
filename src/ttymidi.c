@@ -481,7 +481,7 @@ void* read_midi_from_serial_port(void* seq)
 /* --------------------------------------------------------------------- */
 // Main program
 
-main(int argc, char** argv)
+int main(int argc, char** argv)
 {
 	//arguments arguments;
 	struct termios oldtio, newtio;

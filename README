@@ -14,6 +14,10 @@ for that installed. In Debian or Ubuntu, you can install it by running:
 
 	apt-get install libasound2-dev
 
+In Fedora, Centos, or Redhat:
+
+	yum install alsa-lib-devel
+
 After you compile ttyMIDI, you may wish to copy it to /usr/bin for easy
 access. This can be done simply by following command:
 
