@@ -1,0 +1,16 @@
+{
+    "configurations": [
+        {
+            "name": "Bela",
+            "includePath": [
+                "/usr/local/linaro/BelaSysroot/root/Bela/include",
+                "/usr/local/linaro/BelaSysroot/usr/include",
+                "/usr/local/linaro/BelaSysroot/usr/local/include"
+            ],
+            "intelliSenseMode": "gcc-x86",
+            "compilerPath": "/usr/local/linaro/arm-bela-linux-gnueabihf/bin/arm-bela-linux-gnueabihf-g++",
+            "cppStandard": "c++17"
+        }
+    ],
+    "version": 4
+}
