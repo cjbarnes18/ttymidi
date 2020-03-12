@@ -15,17 +15,33 @@
     along with ttymidi.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
-#include <string.h>
+#include <sys/ioctl.h>
+#include <asm/ioctls.h>
+#include <asm/termbits.h>  
 #include <alsa/asoundlib.h>
+#include <fcntl.h>  
+#include <unistd.h>  
+#include <string.h>  
+#include <stdbool.h>  
+#include <errno.h>  
 
-bool verbose = true;
+#define SERIAL_PATH "/dev/ttyS4"
+#define MAX_MSG_SIZE 1024
+#define PRINTONLY 0
+#define VERBOSE 1
+#define SILENT 0
 
-int open_seq(snd_seq_t** seq) 
+int serial;
+int port_out_id;
+
+int open_seq (snd_seq_t** seq) 
 {
-	int port_out_id, port_in_id; // actually port_in_id is not needed nor used anywhere
+	int port;
 
-	if (snd_seq_open(seq, "default", SND_SEQ_OPEN_DUPLEX, 0) < 0) 
+	if (snd_seq_open(seq, "default", SND_SEQ_OPEN_INPUT, 0) < 0) 
 	{
 		fprintf(stderr, "Error opening ALSA sequencer.\n");
 		exit(1);
@@ -33,24 +49,56 @@ int open_seq(snd_seq_t** seq)
 
 	snd_seq_set_client_name(*seq, "ttymidi");
 
-	if ((port_out_id = snd_seq_create_simple_port(*seq, "MIDI out",
+	if ((port = snd_seq_create_simple_port(*seq, "ttymidi",
 					SND_SEQ_PORT_CAP_READ|SND_SEQ_PORT_CAP_SUBS_READ,
 					SND_SEQ_PORT_TYPE_APPLICATION)) < 0) 
 	{
 		fprintf(stderr, "Error creating sequencer port.\n");
 	}
 
-	if ((port_in_id = snd_seq_create_simple_port(*seq, "MIDI in",
-					SND_SEQ_PORT_CAP_WRITE|SND_SEQ_PORT_CAP_SUBS_WRITE,
-					SND_SEQ_PORT_TYPE_APPLICATION)) < 0) 
-	{
-		fprintf(stderr, "Error creating sequencer port.\n");
-	}
-
-	return port_out_id;
+	return port;
 }
 
-void parse_midi_command(snd_seq_t* seq, int port_out_id, char *buf)
+int setup_serial_port (const char path[], int speed)
+{
+    //Below is some new code for setting up serial comms which allows me
+    //to use non-standard baud rates (such as 31250 for MIDI interface comms).
+    //This code was provided in this thread:
+    //https://groups.google.com/forum/#!searchin/beagleboard/Peter$20Hurdley%7Csort:date/beagleboard/GC0rKe6rM0g/lrHWS_e2_poJ
+    //This is a direct link to the example code:
+    //https://gist.githubusercontent.com/peterhurley/fbace59b55d87306a5b8/raw/220cfc2cb1f2bf03ce662fe387362c3cc21b65d7/anybaud.c
+
+    int fd;
+    struct termios2 tio;
+    
+    // open device for read
+    fd = open (path, O_RDONLY | O_NOCTTY);
+    
+    //if can't open file
+    if (fd < 0)
+    {
+        //show error and exit
+        perror (path);
+        return (-1);
+    }
+    
+    if (ioctl (fd, TCGETS2, &tio) < 0)
+        perror("TCGETS2 ioctl");
+    
+    tio.c_cflag &= ~CBAUD;
+    tio.c_cflag |= BOTHER;
+    tio.c_ispeed = speed;
+    tio.c_ospeed = speed;
+    
+    if (ioctl (fd, TCSETS2, &tio) < 0)
+        perror("TCSETS2 ioctl");
+    
+    printf("%s speed set to %d baud\r\n", path, speed);
+
+    return fd;
+}
+
+void parse_midi_command (snd_seq_t* seq, int port_out_id, char *buf)
 {
 	/*
 	   MIDI COMMANDS
@@ -95,44 +143,44 @@ void parse_midi_command(snd_seq_t* seq, int port_out_id, char *buf)
 	switch (operation)
 	{
 		case 0x80:
-			if (verbose) 
+			if (!SILENT && VERBOSE) 
 				printf("Serial  0x%x Note off           %03u %03u %03u\n", operation, channel, param1, param2);
 			snd_seq_ev_set_noteoff(&ev, channel, param1, param2);
 			break;
 			
 		case 0x90:
-			if (verbose) 
+			if (!SILENT && VERBOSE) 
 				printf("Serial  0x%x Note on            %03u %03u %03u\n", operation, channel, param1, param2);
 			snd_seq_ev_set_noteon(&ev, channel, param1, param2);
 			break;
 			
 		case 0xA0:
-			if (verbose) 
+			if (!SILENT && VERBOSE) 
 				printf("Serial  0x%x Pressure change    %03u %03u %03u\n", operation, channel, param1, param2);
 			snd_seq_ev_set_keypress(&ev, channel, param1, param2);
 			break;
 
 		case 0xB0:
-			if (verbose) 
+			if (!SILENT && VERBOSE) 
 				printf("Serial  0x%x Controller change  %03u %03u %03u\n", operation, channel, param1, param2);
 			snd_seq_ev_set_controller(&ev, channel, param1, param2);
 			break;
 
 		case 0xC0:
-			if (verbose) 
+			if (!SILENT && VERBOSE) 
 				printf("Serial  0x%x Program change     %03u %03u\n", operation, channel, param1);
 			snd_seq_ev_set_pgmchange(&ev, channel, param1);
 			break;
 
 		case 0xD0:
-			if (verbose) 
+			if (!SILENT && VERBOSE) 
 				printf("Serial  0x%x Channel change     %03u %03u\n", operation, channel, param1);
 			snd_seq_ev_set_chanpress(&ev, channel, param1);
 			break;
 
 		case 0xE0:
 			param1 = (param1 & 0x7F) + ((param2 & 0x7F) << 7);
-			if (verbose) 
+			if (!SILENT && VERBOSE) 
 				printf("Serial  0x%x Pitch bend         %03u %05i\n", operation, channel, param1);
 			snd_seq_ev_set_pitchbend(&ev, channel, param1 - 8192); // in alsa MIDI we want signed int
 			break;
@@ -146,4 +194,78 @@ void parse_midi_command(snd_seq_t* seq, int port_out_id, char *buf)
 
 	snd_seq_event_output_direct(seq, &ev);
 	snd_seq_drain_output(seq);
+}
+
+void read_midi_from_serial_port (snd_seq_t* seq) 
+{
+	char buf[3], msg[MAX_MSG_SIZE];
+	int i, msglen;
+	
+	/* Lets first fast forward to first status byte... */
+	if (PRINTONLY) {
+		do read(serial, buf, 1);
+		while (buf[0] >> 7 == 0);
+	}
+
+	while (1) 
+	{
+		/* 
+		 * super-debug mode: only print to screen whatever
+		 * comes through the serial port.
+		 */
+
+		if (PRINTONLY) 
+		{
+			read(serial, buf, 1);
+			printf("%x\t", (int) buf[0]&0xFF);
+			fflush(stdout);
+			continue;
+		}
+
+        int i = 1;
+        while (i < 3)
+        {
+            read(serial, buf+i, 1);
+
+			if (buf[i] >> 7 != 0)
+            {
+				// status byte
+				buf[0] = buf[i];
+				i = 1;
+			}
+            else
+            {
+                // data byte
+                if (i == 2) {i = 3;}
+                else
+                {
+                    // if the message type is program change or mono key pressure, it only uses 2 bytes
+                    if ((buf[0] & 0xF0) == 0xC0 || (buf[0] & 0xF0) == 0xD0)
+						i = 3;
+                    else
+						i = 2;
+                }
+            }
+        }
+
+		parse_midi_command(seq, port_out_id, buf);
+	}
+}
+
+int main (void)   
+{
+    // setup sequencer 
+    printf ("Setting up ALSA sequencer...\n");
+    snd_seq_t *seq;
+    port_out_id = open_seq (&seq);
+
+    // open UART device file for read/write
+    printf ("Opening %s...\n", SERIAL_PATH);
+    serial = setup_serial_port (SERIAL_PATH, 31250);
+
+    // start main thread
+    printf ("Starting read thread.\n");
+    read_midi_from_serial_port (seq);
+  
+    return 0;  
 }
