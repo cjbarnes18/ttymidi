@@ -47,15 +47,18 @@ int port_out_id;
 
 /* --------------------------------------------------------------------- */
 // Program options
+const char *argp_program_version     = "ttymidi 0.60";
+const char *argp_program_bug_address = "tvst@hotmail.com";
+static char doc[]       = "ttymidi - Connect serial port devices to ALSA MIDI programs!";
 
 static struct argp_option options[] = 
 {
-	{"serialdevice" , 's', "DEV" , 0, "Serial device to use. Default = /dev/ttyUSB0" },
-	{"baudrate"     , 'b', "BAUD", 0, "Serial port baud rate. Default = 115200" },
-	{"verbose"      , 'v', 0     , 0, "For debugging: Produce verbose output" },
-	{"printonly"    , 'p', 0     , 0, "Super debugging: Print values read from serial -- and do nothing else" },
-	{"quiet"        , 'q', 0     , 0, "Don't produce any output, even when the print command is sent" },
-	{"name"		, 'n', "NAME", 0, "Name of the Alsa MIDI client. Default = ttymidi" },
+	{"serialdevice" , 's', "DEV" , 0, "Serial device to use. Default = /dev/ttyUSB0", 0 },
+	{"baudrate"     , 'b', "BAUD", 0, "Serial port baud rate. Default = 115200", 0 },
+	{"verbose"      , 'v', 0     , 0, "For debugging: Produce verbose output", 0 },
+	{"printonly"    , 'p', 0     , 0, "Super debugging: Print values read from serial -- and do nothing else", 0 },
+	{"quiet"        , 'q', 0     , 0, "Don't produce any output, even when the print command is sent", 0 },
+	{"name"		, 'n', "NAME", 0, "Name of the Alsa MIDI client. Default = ttymidi", 0 },
 	{ 0 }
 };
 
@@ -66,12 +69,6 @@ typedef struct _arguments
 	int  baudrate;
 	char name[MAX_DEV_STR_LEN];
 } arguments_t;
-
-void exit_cli(int sig)
-{
-	run = FALSE;
-	printf("\rttymidi closing down ... ");
-}
 
 static error_t parse_opt (int key, char *arg, struct argp_state *state)
 {
@@ -139,13 +136,15 @@ void arg_set_defaults(arguments_t *arguments)
 	strncpy(arguments->name, name_tmp, MAX_DEV_STR_LEN);
 }
 
-const char *argp_program_version     = "ttymidi 0.60";
-const char *argp_program_bug_address = "tvst@hotmail.com";
-static char doc[]       = "ttymidi - Connect serial port devices to ALSA MIDI programs!";
-static struct argp argp = { options, parse_opt, 0, doc };
+static struct argp argp = { options, parse_opt, 0, doc, NULL, NULL, NULL };
 arguments_t arguments;
 
-
+void exit_cli(int sig)
+{
+	(void)sig;
+	run = FALSE;
+	printf("\rttymidi closing down ... ");
+}
 
 /* --------------------------------------------------------------------- */
 // MIDI stuff
@@ -394,12 +393,14 @@ void* read_midi_from_alsa(void* seq)
 	}	
 
 	printf("\nStopping [PC]->[Hardware] communication...");
+
+	return NULL;
 }
 
 void* read_midi_from_serial_port(void* seq) 
 {
 	char buf[3], msg[MAX_MSG_SIZE];
-	int i, msglen;
+	int msglen;
 	
 	/* Lets first fast forward to first status byte... */
 	if (!arguments.printonly) {
@@ -471,23 +472,27 @@ void* read_midi_from_serial_port(void* seq)
 			puts(msg);
 			putchar('\n');
 			fflush(stdout);
+		} else {
+			/* parse MIDI message */
+			parse_midi_command(seq, port_out_id, buf);
 		}
-
-		/* parse MIDI message */
-		else parse_midi_command(seq, port_out_id, buf);
 	}
+
+	return NULL;
 }
 
 /* --------------------------------------------------------------------- */
 // Main program
 
-main(int argc, char** argv)
+int main(int argc, char** argv)
 {
 	//arguments arguments;
 	struct termios oldtio, newtio;
 	struct serial_struct ser_info;
-	char* modem_device = "/dev/ttyS0";
+	pthread_t midi_out_thread, midi_in_thread;
 	snd_seq_t *seq;
+	void* status;
+	int ret;
 
 	arg_set_defaults(&arguments);
 	argp_parse(&argp, argc, argv, 0, 0, &arguments);
@@ -571,27 +576,30 @@ main(int argc, char** argv)
 	 */
 
 	/* Starting thread that is polling alsa midi in port */
-	pthread_t midi_out_thread, midi_in_thread;
-	int iret1, iret2;
 	run = TRUE;
-	iret1 = pthread_create(&midi_out_thread, NULL, read_midi_from_alsa, (void*) seq);
+	ret = pthread_create(&midi_out_thread, NULL, read_midi_from_alsa, (void*) seq);
+	if (ret)
+		goto exit_term;
 	/* And also thread for polling serial data. As serial is currently read in
            blocking mode, by this we can enable ctrl+c quiting and avoid zombie
            alsa ports when killing app with ctrl+z */
-	iret2 = pthread_create(&midi_in_thread, NULL, read_midi_from_serial_port, (void*) seq);
+	ret = pthread_create(&midi_in_thread, NULL, read_midi_from_serial_port, (void*) seq);
+	if (ret) {
+		run = FALSE;
+		goto exit_join_out;
+	}
+
 	signal(SIGINT, exit_cli);
 	signal(SIGTERM, exit_cli);
 
-	while (run)
-	{   
-		sleep(100);
-	}
-
-	void* status;
+	pthread_join(midi_in_thread, &status);
+exit_join_out:
 	pthread_join(midi_out_thread, &status);
 
+exit_term:
 	/* restore the old port settings */
 	tcsetattr(serial, TCSANOW, &oldtio);
 	printf("\ndone!\n");
-}
 
+	return 0;
+}
