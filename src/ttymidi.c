@@ -21,16 +21,16 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <termios.h>
 #include <stdio.h>
 #include <argp.h>
 #include <alsa/asoundlib.h>
 #include <signal.h>
 #include <pthread.h>
-// Linux-specific
-#include <linux/serial.h>
-#include <linux/ioctl.h>
-#include <asm/ioctls.h>
+#ifdef __gnu_linux__
+#include "termios2.h"
+#else
+#include "term_posix.h"
+#endif
 
 #define FALSE                         0
 #define TRUE                          1
@@ -66,7 +66,7 @@ typedef struct _arguments
 {
 	int  silent, verbose, printonly;
 	char serialdevice[MAX_DEV_STR_LEN];
-	int  baudrate;
+	uint64_t  baudrate;
 	char name[MAX_DEV_STR_LEN];
 } arguments_t;
 
@@ -99,20 +99,14 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 		case 'b':
 			if (arg == NULL) break;
 			baud_temp = strtol(arg, NULL, 0);
-			if (baud_temp != EINVAL && baud_temp != ERANGE)
-				switch (baud_temp)
-				{
-					case 1200   : arguments->baudrate = B1200  ; break;
-					case 2400   : arguments->baudrate = B2400  ; break;
-					case 4800   : arguments->baudrate = B4800  ; break;
-					case 9600   : arguments->baudrate = B9600  ; break;
-					case 19200  : arguments->baudrate = B19200 ; break;
-					case 38400  : arguments->baudrate = B38400 ; break;
-					case 57600  : arguments->baudrate = B57600 ; break;
-					case 115200 : arguments->baudrate = B115200; break;
-					default: printf("Baud rate %i is not supported.\n",baud_temp); exit(1);
-				}
-
+			if (baud_temp != EINVAL && baud_temp != ERANGE) {
+				arguments->baudrate = baud_temp;
+			} else {
+				printf("Baud rate %i is not supported.\n",
+				       baud_temp);
+				exit(1);
+			}
+			break;
 		case ARGP_KEY_ARG:
 		case ARGP_KEY_END:
 			break;
@@ -130,7 +124,7 @@ void arg_set_defaults(arguments_t *arguments)
 	arguments->printonly    = 0;
 	arguments->silent       = 0;
 	arguments->verbose      = 0;
-	arguments->baudrate     = B115200;
+	arguments->baudrate     = 31250;
 	char *name_tmp		= (char *)"ttymidi";
 	strncpy(arguments->serialdevice, serialdevice_temp, MAX_DEV_STR_LEN);
 	strncpy(arguments->name, name_tmp, MAX_DEV_STR_LEN);
@@ -487,8 +481,6 @@ void* read_midi_from_serial_port(void* seq)
 int main(int argc, char** argv)
 {
 	//arguments arguments;
-	struct termios oldtio, newtio;
-	struct serial_struct ser_info;
 	pthread_t midi_out_thread, midi_in_thread;
 	snd_seq_t *seq;
 	void* status;
@@ -516,51 +508,13 @@ int main(int argc, char** argv)
 		exit(-1); 
 	}
 
-	/* save current serial port settings */
-	tcgetattr(serial, &oldtio); 
-
-	/* clear struct for new port settings */
-	bzero(&newtio, sizeof(newtio)); 
-
-	/* 
-	 * BAUDRATE : Set bps rate. You could also use cfsetispeed and cfsetospeed.
-	 * CRTSCTS  : output hardware flow control (only used if the cable has
-	 * all necessary lines. See sect. 7 of Serial-HOWTO)
-	 * CS8      : 8n1 (8bit, no parity, 1 stopbit)
-	 * CLOCAL   : local connection, no modem contol
-	 * CREAD    : enable receiving characters
-	 */
-	newtio.c_cflag = arguments.baudrate | CS8 | CLOCAL | CREAD; // CRTSCTS removed
-
-	/*
-	 * IGNPAR  : ignore bytes with parity errors
-	 * ICRNL   : map CR to NL (otherwise a CR input on the other computer
-	 * will not terminate input)
-	 * otherwise make device raw (no other input processing)
-	 */
-	newtio.c_iflag = IGNPAR;
-
-	/* Raw output */
-	newtio.c_oflag = 0;
-
-	/*
-	 * ICANON  : enable canonical input
-	 * disable all echo functionality, and don't send signals to calling program
-	 */
-	newtio.c_lflag = 0; // non-canonical
-
-	/* 
-	 * set up: we'll be reading 4 bytes at a time.
-	 */
-	newtio.c_cc[VTIME]    = 0;     /* inter-character timer unused */
-	newtio.c_cc[VMIN]     = 1;     /* blocking read until n character arrives */
-
-	/* 
-	 * now clean the modem line and activate the settings for the port
-	 */
-	tcflush(serial, TCIFLUSH);
-	tcsetattr(serial, TCSANOW, &newtio);
-
+#ifdef __gnu_linux__
+	if (setup_termios2_tty(serial, arguments.baudrate)) {
+#else
+	if (setup_posix_tty(serial, arguments.baudrate)) {
+#endif
+		exit(-1);
+	}
 	// Linux-specific: enable low latency mode (FTDI "nagling off")
 //	ioctl(serial, TIOCGSERIAL, &ser_info);
 //	ser_info.flags |= ASYNC_LOW_LATENCY;
@@ -598,7 +552,11 @@ exit_join_out:
 
 exit_term:
 	/* restore the old port settings */
-	tcsetattr(serial, TCSANOW, &oldtio);
+#ifdef __gnu_linux__
+	exit_termios2_tty(serial);
+#else
+	exit_posix_tty(serial);
+#endif
 	printf("\ndone!\n");
 
 	return 0;
