@@ -1,5 +1,6 @@
 all:
-	gcc src/ttymidi.c -o ttymidi -lasound -lpthread
+	gcc src/ttymidi.c src/termios2.c src/term_posix.c \
+	       	-Iinc -o ttymidi -lasound -lpthread
 clean:
 	rm ttymidi
 install:
